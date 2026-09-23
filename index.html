@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32-S3 蓝牙遥控 · 手机 / 手柄</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230F766E'/%3E%3Cpath d='M20 24c-8 0-13.8 6.6-13.2 14 .5 6.6 3.8 12.6 8.8 16.2 3.3 2.4 7.4 1.9 10.2-.9l4-4.4h10.4l4 4.4c2.8 2.8 6.9 3.3 10.2.9 5-3.6 8.3-9.6 8.8-16.2.6-7.4-5.2-14-13.2-14-4.1 0-7.2 2.2-9.6 4.7-1.4 1.4-3.3 2.3-5.2 2.3h-8.8c-1.9 0-3.8-.9-5.2-2.3C27.2 26.2 24.1 24 20 24z' fill='%23ffffff'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">ESP32-S3 BLE Controller</p>
+          <h1>蓝牙遥控测试</h1>
+        </div>
+        <button id="connectButton" class="primary-button" type="button">
+          连接蓝牙
+        </button>
+      </section>
+
+      <section class="mode-select" aria-label="遥控方式">
+        <button class="mode-btn active" type="button" data-mode="phone">手机遥控</button>
+        <button class="mode-btn" type="button" data-mode="pad">手柄遥控</button>
+      </section>
+
+      <section class="status-panel" aria-live="polite">
+        <div>
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">未连接</span>
+        </div>
+        <span id="lastCommand">等待指令</span>
+      </section>
+
+      <!-- ===== 手机遥控（原有功能不变） ===== -->
+      <div id="phoneView">
+        <section class="speed-panel">
+          <label for="speedSlider">速度</label>
+          <input id="speedSlider" type="range" min="80" max="255" value="180" />
+          <output id="speedValue" for="speedSlider">180</output>
+        </section>
+
+        <section class="control-pad" aria-label="方向控制">
+          <button class="control-button up" type="button" data-command="F">前进</button>
+          <button class="control-button left" type="button" data-command="L">左转</button>
+          <button class="control-button stop" type="button" data-command="S">停止</button>
+          <button class="control-button right" type="button" data-command="R">右转</button>
+          <button class="control-button down" type="button" data-command="B">后退</button>
+        </section>
+
+        <section class="command-map">
+          <span>W / ↑ 前进</span>
+          <span>S / ↓ 后退</span>
+          <span>A / ← 左转</span>
+          <span>D / → 右转</span>
+          <span>空格 停止</span>
+        </section>
+      </div>
+
+      <!-- ===== 手柄遥控 ===== -->
+      <div id="padView" hidden>
+        <section class="pad-meta" aria-live="polite">
+          <span class="pad-dot" id="padDot"></span>
+          <span id="padStatusText">未检测到手柄</span>
+          <span class="pad-info" id="padInfo">—</span>
+        </section>
+
+        <section class="pad-grid">
+          <div class="pad-card">
+            <h3>左摇杆 · 完全操控（优先）</h3>
+            <svg class="pad-svg" viewBox="0 0 240 240" aria-label="左摇杆角度">
+              <circle class="w-track" cx="120" cy="120" r="92" />
+              <line class="w-cross" x1="28" y1="120" x2="212" y2="120" />
+              <line class="w-cross" x1="120" y1="28" x2="120" y2="212" />
+              <circle class="w-deadzone" cx="120" cy="120" r="12" />
+              <path class="w-arc" id="padL-arc" d="" />
+              <line class="w-ray" id="padL-ray" x1="120" y1="120" x2="120" y2="120" />
+              <circle class="w-dot" id="padL-dot" cx="120" cy="120" r="13" />
+              <text class="w-compass" x="120" y="42">上 90°</text>
+              <text class="w-compass" x="120" y="204">下 270°</text>
+              <text class="w-compass" x="30" y="122">左 180°</text>
+              <text class="w-compass" x="210" y="122">右 0°</text>
+            </svg>
+            <div class="pad-readout">
+              <span class="tag">角度<b id="padL-angle">0.0°</b></span>
+              <span class="tag">力度<b id="padL-mag">0%</b></span>
+              <span class="tag">X<b id="padL-x">0.00</b></span>
+              <span class="tag">Y<b id="padL-y">0.00</b></span>
+            </div>
+            <p class="pad-note">上推前进 / 下拉后退，推得越深越快 · 左右拨动差速转向 · 左摇杆生效期间 LT 油门自动取消</p>
+          </div>
+
+          <div class="pad-card">
+            <h3>LT 油门 + 右摇杆转向</h3>
+            <div class="pad-trigger">
+              <span class="pt-name">LT</span>
+              <div class="pt-track"><div class="pt-fill" id="padLT-fill"></div></div>
+              <span class="pt-val" id="padLT-val">0.00</span>
+            </div>
+            <svg class="pad-svg" viewBox="0 0 240 240" aria-label="右摇杆角度">
+              <circle class="w-track" cx="120" cy="120" r="92" />
+              <line class="w-cross" x1="28" y1="120" x2="212" y2="120" />
+              <line class="w-cross" x1="120" y1="28" x2="120" y2="212" />
+              <circle class="w-deadzone" cx="120" cy="120" r="12" />
+              <path class="w-arc r" id="padR-arc" d="" />
+              <line class="w-ray r" id="padR-ray" x1="120" y1="120" x2="120" y2="120" />
+              <circle class="w-dot r" id="padR-dot" cx="120" cy="120" r="13" />
+              <text class="w-compass" x="120" y="42">上 90°</text>
+              <text class="w-compass" x="120" y="204">下 270°</text>
+              <text class="w-compass" x="30" y="122">左 180°</text>
+              <text class="w-compass" x="210" y="122">右 0°</text>
+            </svg>
+            <div class="pad-readout">
+              <span class="tag">角度<b id="padR-angle">0.0°</b></span>
+              <span class="tag">力度<b id="padR-mag">0%</b></span>
+              <span class="tag">X<b id="padR-x">0.00</b></span>
+              <span class="tag">Y<b id="padR-y">0.00</b></span>
+            </div>
+            <p class="pad-note">LT 为线性油门（仅前进）· 右摇杆左右拨动直接按位移控制差速转向</p>
+          </div>
+        </section>
+
+        <section class="pad-state">
+          <div class="pad-badge" id="padSource">无输入</div>
+          <div class="pad-motor">
+            <span>左轮 <b id="padLeftWheel">0</b></span>
+            <span>右轮 <b id="padRightWheel">0</b></span>
+          </div>
+        </section>
+
+        <section class="pad-buttons" id="padButtons" aria-label="手柄按键状态"></section>
+
+        <section class="pad-hints">
+          <p><b>左摇杆（优先）</b>：上推前进、下拉后退，推得越深速度越快；向左/向右拨动产生左右轮转速差实现转向；左摇杆生效时 LT 油门自动取消，左摇杆可独立完成全部操控。</p>
+          <p><b>LT 扳机</b>：线性油门，按得越深电机转速越高（仅前进）。</p>
+          <p><b>右摇杆</b>：左右拨动控制差速转向 —— 直接使用摇杆位移作为转速差（不做角度换算），拨向哪边哪边轮子减速。</p>
+          <p><b>差速转向</b>：转向依靠两侧轮子转速不同实现，例如右摇杆推右 → 右轮减速、左轮保持，小车向右转。</p>
+          <p>手柄需先用蓝牙配对（Windows 设置 → 蓝牙 → 添加设备 → Xbox Wireless Controller），用 Chrome / Edge 打开本页并保持前台，按手柄任意按键激活检测。</p>
+        </section>
+      </div>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
